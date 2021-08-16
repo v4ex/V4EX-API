@@ -1,0 +1,12 @@
+/.idea
+/bugs
+/build/*
+!/build/.gitkeep
+/data
+/dev
+/node_modules
+/tests
+/src/controllers/dev-controller.js
+
+.env
+wrangler.toml
