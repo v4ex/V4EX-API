@@ -41,16 +41,20 @@ export default class CompanyController extends AuthController {
             return new Response("Forbidden", { status: 403 })
           } else {
             // TODO Handle error
-            await this.kv.put(this.newRevisionKey, this.request.body)
-            return new Response("OK", { status: 200 })
+            const key = this.newRevisionKey
+            await this.kv.put(key, this.request.body)
+
+            return new Response(key, { status: 200 })
           }
 
           break
         }
         case 'PUT': {
+          const key = this.newRevisionKey
           // TODO Handle error
-          await this.kv.put(this.newRevisionKey, this.request.body)
-          return new Response("OK", { status: 200 })
+          await this.kv.put(key, this.request.body)
+
+          return new Response(key, { status: 200 })
 
           break
         }
@@ -87,7 +91,7 @@ export default class CompanyController extends AuthController {
   /**
    * Get the KV storage
    */
-   get kv() {
+  get kv() {
     return globalThis.env.kvCompany
   }
 
@@ -95,23 +99,48 @@ export default class CompanyController extends AuthController {
     return await this.request.json()
   }
 
-  async checkIfEntityExist() {
-    const entitiesList = await this.kv.list({
-      prefix: this.companyName
-    })
-
-    return entitiesList.keys.length > 0
+  getFetchUrl({prefix, limit, cursor}) {
+    const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${process.env.CLOUDFLARE_KV_COMPANY_ID}/keys`
+    const fetchUrl = new URL(apiUrl)
+    fetchUrl.searchParams.append('prefix', prefix ?? this.companyName)
+    fetchUrl.searchParams.append('limit', limit ?? 1000)
+    fetchUrl.searchParams.append('cursor', cursor ?? ';')
+    
+    return fetchUrl
   }
 
-  async getLatestRevisionKey() {
-    // TODO Handle more than 1000 revisions
-    const entitiesList = await this.kv.list({
-      prefix: this.companyName
+  // ENV CLOUDFLARE_ACCOUNT_ID
+  // ENV CLOUDFLARE_KV_COMPANY_ID
+  // ENV CLOUDFLARE_API_TOKEN
+  async checkIfEntityExist() {
+    const response = await fetch(this.getFetchUrl({limit: 10}), {
+      headers: {
+        authorization: `bearer ${globalThis.env.CLOUDFLARE_API_TOKEN}`
+      }
     })
+    const data = await response.json()
 
-    // console.log(`entitiesList`, entitiesList) // DEBUG
+    return data.result_info.count > 0
+  }
+
+  // ENV CLOUDFLARE_ACCOUNT_ID
+  // ENV CLOUDFLARE_KV_COMPANY_ID
+  // ENV CLOUDFLARE_API_TOKEN
+  async getLatestRevisionKey() {
+    let response, data
+    do {
+      response = await fetch(this.getFetchUrl(), {
+        headers: {
+          authorization: `bearer ${globalThis.env.CLOUDFLARE_API_TOKEN}`
+        }
+      })
+      data = await response.json()
+      fetchUrl.searchParams.set('cursor', data.result_info.cursor)
+    } while (data.result_info.cursor)
+
+    // console.log(`data`, data) // DEBUG
     
-    return entitiesList.keys[entitiesList.keys.length - 1].name
+    return data.result[data.result_info.count - 1].name
   }
 
   async getLatestRevision() {
